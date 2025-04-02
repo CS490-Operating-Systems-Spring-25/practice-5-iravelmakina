@@ -78,6 +78,7 @@ function get_background_color {
         b|${COLOR_BLUE})        echo "\\e[44m";;
         m|${COLOR_MAGENTA})     echo "\\e[45m";;
         c|${COLOR_CYAN})        echo "\\e[46m";;
+        D|${COLOR_DARK_GRAY})   echo "\\e[90m";;
         w|${COLOR_WHITE})       echo "\\e[47m";;
         *)                      echo "\\e[0m";;
     esac
@@ -239,6 +240,10 @@ function cpu_exec {
                     START_COLOR="\033[96m"
                     END_COLOR="\033[0m"
                     ;;
+                $COLOR_DARK_GRAY)
+                    START_COLOR="\033[100m"
+                    END_COLOR="\033[0m"
+                    ;;
                 $COLOR_WHITE)
                     START_COLOR="\033[97m"
                     END_COLOR="\033[0m"
@@ -301,7 +306,7 @@ function cpu_exec {
                 local CUR_BITMAP_LINE=$(read_from_address $(($i)))
                 RES_STR="$RES_STR${CUR_BITMAP_LINE}\n"
             done
-            RES_STR="$(echo "$RES_STR" | sed -e 's,m,\\e[45m ,g' -e 's,g,\\e[42m ,g' -e 's,y,\\e[43m ,g' -e 's,r,\\e[41m ,g' -e 's,B,\\e[40m ,g' -e 's,b,\\e[44m ,g' -e 's,c,\\e[46m ,g' -e 's,w,\\e[47m ,g')$BG_COLOR"
+            RES_STR="$(echo "$RES_STR" | sed -e 's,m,\\e[45m ,g' -e 's,g,\\e[42m ,g' -e 's,y,\\e[43m ,g' -e 's,r,\\e[41m ,g' -e 's,B,\\e[40m ,g' -e 's,b,\\e[44m ,g' -e 's,c,\\e[46m ,g' -e 's,G,\\e[100m ,g'  -e 's,w,\\e[47m ,g')$BG_COLOR"
             clear
             echo -e "$RES_STR"
             ;;

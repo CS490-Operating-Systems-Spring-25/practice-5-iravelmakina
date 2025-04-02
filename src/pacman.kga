@@ -1,0 +1,233 @@
+// === Bitmap Shift: Pacman Style ===
+
+label kernel_entry_point
+
+DEBUG_OFF
+
+// Welcome message
+write "Press enter and then use A/D to shift Pacman left/right. Press Q to quit." to DISPLAY_BUFFER
+write COLOR_YELLOW to DISPLAY_COLOR
+write OP_DISPLAY_LN to REG_OP
+cpu_exec
+
+write OP_READ_INPUT to REG_OP
+cpu_exec
+
+// Fill black background
+write COLOR_BLACK to DISPLAY_BACKGROUND
+write OP_SET_BACKGROUND_COLOR to REG_OP
+cpu_exec
+
+// === Bitmap memory setup ===
+var bitmapStart
+copy FREE_MEMORY_START to var:bitmapStart
+
+var bitmapLineCount
+write "14" to var:bitmapLineCount
+
+// Create initial Pacman bitmap in dynamic memory
+write "BBBBBBBBBBBBBBBBBB" to *var:bitmapStart
+copy var:bitmapStart to REG_A
+write OP_INCR to REG_OP
+cpu_exec
+copy REG_RES to REG_A
+
+write "BBBBBGGGGGGGGGBBBB" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+write "BBBGGyyyyyyyyyGGBB" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+write "BBGyyyyyyyyyyyyyGB" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+write "BGyyyyyyyyGGyyyyyG" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+write "BGyyyyyyyyyyyyyGGG" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+write "GyyyyyyyyyyyyGGBBB" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+write "GyyyyyyyyyyGGBBBBB" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+write "GyyyyyyyyyyyyGGBBB" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+write "BGyyyyyyyyyyyyyGGG" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+write "BGyyyyyyyyyyyyyyyG" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+write "BBGyyyyyyyyyyyyyGB" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+write "BBBGGyyyyyyyyyGGBB" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+write "BBBBBGGGGGGGGGBBBB" to *REG_A
+cpu_exec
+copy REG_RES to REG_A
+
+// === End of bitmap creation ===
+// Input control variables
+var key_left
+write "a" to var:key_left
+var key_right
+write "d" to var:key_right
+var key_quit
+write "q" to var:key_quit
+
+// Temporary variables
+var shift_line
+var counter
+
+// Stack pointer init
+copy FREE_MEMORY_END to REG_A
+write OP_INCR to REG_OP
+cpu_exec
+copy REG_RES to var:sys_stack_ptr
+
+// Main loop
+label main_loop
+    copy var:bitmapStart to REG_A
+    copy var:bitmapLineCount to REG_B
+    write OP_ADD to REG_OP
+    cpu_exec
+    copy REG_RES to REG_B
+    copy var:bitmapStart to REG_A
+    write OP_RENDER_BITMAP to REG_OP
+    cpu_exec
+
+    write KEYBOARD_READ_CHAR_SILENTLY to REG_A
+    write OP_READ_INPUT to REG_OP
+    cpu_exec
+
+    copy KEYBOARD_BUFFER to REG_A
+    write OP_CMP_EQ to REG_OP
+
+    copy var:key_left to REG_B
+    cpu_exec
+    jump_if label:call_shift_left
+
+    copy var:key_right to REG_B
+    cpu_exec
+    jump_if label:call_shift_right
+
+    copy var:key_quit to REG_B
+    cpu_exec
+    jump_if label:exit
+    jump label:main_loop
+
+// Shift Left
+label call_shift_left
+    copy PROGRAM_COUNTER to var:sys_return
+    jump label:shift_left
+    jump label:main_loop
+
+label shift_left
+    copy PROGRAM_COUNTER to var:sys_stack_return
+    jump label:sys_stack_push
+
+    copy *var:bitmapStart to REG_A
+    write "BBBBBBBBBBBBBBBBBB" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:return_from_shift
+
+    write "0" to var:counter
+    copy var:bitmapStart to var:shift_line
+
+label shift_left_loop
+    copy *var:shift_line to REG_A
+    write "1" to REG_B
+    write "" to REG_C
+    write "" to REG_D
+    write OP_REPLACE_COLUMN to REG_OP
+    cpu_exec
+    copy REG_RES to *var:shift_line
+
+    copy *var:shift_line to REG_A
+    cpu_exec
+    copy REG_RES to *var:shift_line
+
+    copy var:counter to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    copy REG_RES to var:counter
+
+    copy var:counter to REG_A
+    copy var:bitmapLineCount to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:return_from_shift
+
+    copy var:shift_line to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    copy REG_RES to var:shift_line
+    jump label:shift_left_loop
+
+// Shift Right
+label call_shift_right
+    copy PROGRAM_COUNTER to var:sys_return
+    jump label:shift_right
+    jump label:main_loop
+
+label shift_right
+    copy PROGRAM_COUNTER to var:sys_stack_return
+    jump label:sys_stack_push
+
+    write "0" to var:counter
+    copy var:bitmapStart to var:shift_line
+
+label shift_right_loop
+    write "BB" to REG_A
+    copy *var:shift_line to REG_B
+    write "" to REG_C
+    write OP_CONCAT_WITH to REG_OP
+    cpu_exec
+    copy REG_RES to *var:shift_line
+
+    copy var:counter to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    copy REG_RES to var:counter
+
+    copy var:counter to REG_A
+    copy var:bitmapLineCount to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:return_from_shift
+
+    copy var:shift_line to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    copy REG_RES to var:shift_line
+    jump label:shift_right_loop
+
+label return_from_shift
+    jump label:sys_stack_pop
+
+label exit
+    write "Exiting Pacman viewer..." to DISPLAY_BUFFER
+    write COLOR_RED to DISPLAY_COLOR
+    write OP_DISPLAY_LN to REG_OP
+    cpu_exec
+    write OP_HALT to REG_OP
+    cpu_exec
