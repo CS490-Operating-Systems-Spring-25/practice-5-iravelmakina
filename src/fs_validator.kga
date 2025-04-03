@@ -1,0 +1,698 @@
+DEBUG_OFF
+
+// Variables
+var diskName
+var partitionName
+var diskSize
+var inputStr
+var lineIndex
+var blockIntervals
+var blockIntervalIdx
+var partLineBuffer
+var partitionFound
+var partitionStart
+var partitionEnd
+var firstUsableBlock
+var lastUsableBlock
+var intervalStart
+var intervalEnd
+var intervalCount
+
+var i
+var j
+var start_i
+var end_i
+var start_j
+var end_j
+var overlapCheck
+
+// different cases
+
+// Prompt user for disk name
+write "Enter disk name (*.disk):" to DISPLAY_BUFFER
+write COLOR_GREEN to DISPLAY_COLOR
+write OP_DISPLAY_LN to REG_OP
+cpu_exec
+
+write OP_READ_INPUT to REG_OP
+cpu_exec
+copy KEYBOARD_BUFFER to var:diskName
+
+// Prompt user for partition name
+write "Enter partition name:" to DISPLAY_BUFFER
+write COLOR_GREEN to DISPLAY_COLOR
+write OP_DISPLAY_LN to REG_OP
+cpu_exec
+
+write OP_READ_INPUT to REG_OP
+cpu_exec
+copy KEYBOARD_BUFFER to var:partitionName
+
+// Read block 1 to get disk size
+copy var:diskName to REG_A
+write 1 to REG_B
+write OP_READ_BLOCK to REG_OP
+cpu_exec
+jump_err label:error
+copy REG_RES to var:diskSize
+
+// Validate disk size is numeric and greater than 0
+copy var:diskSize to REG_A
+write OP_IS_NUM to REG_OP
+cpu_exec
+jump_if_not label:invalid_disk_error
+
+copy var:diskSize to REG_A
+write 0 to REG_B
+write OP_CMP_LE to REG_OP
+cpu_exec
+jump_if label:invalid_disk_error
+
+// Read partition table and validate partition existence
+write 2 to var:lineIndex
+write 0 to var:partitionFound
+
+label partition_search
+    // Read current line from partition table
+    copy var:diskName to REG_A
+    copy var:lineIndex to REG_B
+    write OP_READ_BLOCK to REG_OP
+    cpu_exec
+    jump_err label:error
+    copy REG_RES to var:inputStr
+
+    // Check for START_PARTITION_TABLE
+    copy var:inputStr to REG_A
+    write "START_PARTITION_TABLE" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:next_partition
+
+    // Check for END_PARTITION_TABLE
+    copy var:inputStr to REG_A
+    write "END_PARTITION_TABLE" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:partition_table_end
+
+    // Parse partition entry
+    copy var:inputStr to REG_A
+    write 2 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    copy REG_RES to var:partLineBuffer
+
+    // Compare partition name
+    copy var:partLineBuffer to REG_A
+    copy var:partitionName to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if_not label:next_partition
+
+    // Partition found, retrieve start and end blocks
+    write 1 to var:partitionFound
+
+    // Get START_BLOCK
+    copy var:inputStr to REG_A
+    write 4 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    copy REG_RES to var:partitionStart
+
+    // Get END_BLOCK
+    copy var:inputStr to REG_A
+    write 6 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    copy REG_RES to var:partitionEnd
+
+    jump label:partition_table_end
+
+label next_partition
+    // Increment line index and continue search
+    copy var:lineIndex to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    copy REG_RES to var:lineIndex
+    jump label:partition_search
+
+label partition_table_end
+    // Check if partition was found
+    copy var:partitionFound to REG_A
+    write 1 to REG_B
+    write OP_CMP_NEQ to REG_OP
+    cpu_exec
+    jump_if label:partition_not_found_error
+
+// Validate partition header
+write 0 to var:firstUsableBlock
+write 0 to var:lastUsableBlock
+
+copy var:partitionStart to var:lineIndex
+
+label header_search
+    // Read current block within partition
+    copy var:diskName to REG_A
+    copy var:lineIndex to REG_B
+    write OP_READ_BLOCK to REG_OP
+    cpu_exec
+    jump_err label:error
+    copy REG_RES to var:inputStr
+
+    // Get 1st column
+    copy var:inputStr to REG_A
+    write 1 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+
+    // Check for FS_HEADER
+    copy REG_RES to REG_A
+    write "FS_HEADER" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if_not label:missing_fs_header_error
+
+    // Validate FS_HEADER format
+    copy var:inputStr to REG_A
+    write 2 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    copy REG_RES to var:partLineBuffer
+
+    copy var:partLineBuffer to REG_A
+    write "kagu_fs" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if_not label:invalid_fs_header_error
+
+    // Check that 3rd column is "FIRST_USABLE_BLOCK"
+    copy var:inputStr to REG_A
+    write 3 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+
+    copy REG_RES to REG_A
+    write "FIRST_USABLE_BLOCK" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if_not label:invalid_fs_header_error
+
+    // Get FIRST_USABLE_BLOCK
+    copy var:inputStr to REG_A
+    write 4 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    copy REG_RES to var:firstUsableBlock
+
+    // Check that 5th column is "LAST_USABLE_BLOCK"
+    copy var:inputStr to REG_A
+    write 5 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+
+    copy REG_RES to REG_A
+    write "LAST_USABLE_BLOCK" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if_not label:invalid_fs_header_error
+
+    // Get LAST_USABLE_BLOCK
+    copy var:inputStr to REG_A
+    write 6 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    copy REG_RES to var:lastUsableBlock
+
+    // Validate block numbers
+    // firstUsableBlock < partitionStart
+    copy var:firstUsableBlock to REG_A
+    copy var:partitionStart to REG_B
+    write OP_CMP_LE to REG_OP
+    cpu_exec
+    jump_if label:invalid_fs_header_error
+
+    // lastUsableBlock > partitionEnd
+    copy var:partitionEnd to REG_A
+    copy var:lastUsableBlock to REG_B
+    write OP_CMP_LT to REG_OP
+    cpu_exec
+    jump_if label:invalid_fs_header_error
+
+    copy var:firstUsableBlock to REG_A
+    copy var:lastUsableBlock to REG_B
+    write OP_CMP_LE to REG_OP
+    cpu_exec
+    jump_if_not label:invalid_fs_header_error
+    //FS_HEADER valid, continue to check file headers
+
+// lineIndex++
+    copy var:lineIndex to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    copy REG_RES to var:lineIndex
+
+label file_header_loop
+    // Read current block
+    copy var:diskName to REG_A
+    copy var:lineIndex to REG_B
+    write OP_READ_BLOCK to REG_OP
+    cpu_exec
+    jump_err label:error
+    copy REG_RES to var:inputStr
+
+    // If line is empty → skip
+    copy var:inputStr to REG_A
+    write "" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:next_file_header
+
+    // Validate 11-column format:
+    // Columns 2, 3, 4 should be between 0 and 7
+label check_mode_loop
+    copy var:inputStr to REG_A
+    write 2 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    // Check is number
+    copy REG_RES to REG_A
+    write OP_IS_NUM to REG_OP
+    cpu_exec
+    jump_if_not label:invalid_file_header_error
+
+    // Check in range 0-7
+    copy REG_RES to REG_A
+    write 0 to REG_B
+    write OP_CMP_LT to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
+    write 7 to REG_A
+    copy REG_RES to REG_B
+    write OP_CMP_LT to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
+    copy var:inputStr to REG_A
+    write 3 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    // Check is number
+    copy REG_RES to REG_A
+    write OP_IS_NUM to REG_OP
+    cpu_exec
+    jump_if_not label:invalid_file_header_error
+
+    // Check in range 0-7
+    copy REG_RES to REG_A
+    write 0 to REG_B
+    write OP_CMP_LT to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
+    write 7 to REG_A
+    copy REG_RES to REG_B
+    write OP_CMP_LT to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
+    copy var:inputStr to REG_A
+    write 4 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    // Check is number
+    copy REG_RES to REG_A
+    write OP_IS_NUM to REG_OP
+    cpu_exec
+    jump_if_not label:invalid_file_header_error
+
+    // Check in range 0-7
+    copy REG_RES to REG_A
+    write 0 to REG_B
+    write OP_CMP_LT to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
+    write 7 to REG_A
+    copy REG_RES to REG_B
+    write OP_CMP_LT to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
+    // Check if owner and group do not have spaces
+    copy var:inputStr to REG_A
+    write 5 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+
+    copy REG_RES to REG_A
+    write " " to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
+    copy var:inputStr to REG_A
+    write 6 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+
+    copy REG_RES to REG_A
+    write " " to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
+    // Check if 6th column is "BLOCKS"
+    copy var:inputStr to REG_A
+    write 7 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+
+    copy REG_RES to REG_A
+    write "BLOCKS" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if_not label:invalid_file_header_error
+
+write 8 to var:blockIntervalIdx
+write "" to var:blockIntervals
+write 0 to var:intervalCount
+label block_pair_loop
+    // Get start of block range
+    copy var:inputStr to REG_A
+    copy var:blockIntervalIdx to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    copy REG_RES to var:intervalStart
+
+    // If empty → skip
+    copy var:intervalStart to REG_A
+    write "" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:validate_block_ranges
+
+    // Check if number
+    copy var:intervalStart to REG_A
+    write OP_IS_NUM to REG_OP
+    cpu_exec
+    jump_if_not label:invalid_file_header_error
+
+    // Check if > 0
+    copy var:intervalStart to REG_A
+    write 0 to REG_B
+    write OP_CMP_LT to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
+    // i++
+    copy var:blockIntervalIdx to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    copy REG_RES to var:blockIntervalIdx
+
+    // Get end of block range
+    copy var:inputStr to REG_A
+    copy var:blockIntervalIdx to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    copy REG_RES to var:intervalEnd
+
+    // If empty → invalid
+    copy var:intervalEnd to REG_A
+    write "" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
+    copy var:intervalEnd to REG_A
+    write OP_IS_NUM to REG_OP
+    cpu_exec
+    jump_if_not label:invalid_file_header_error
+
+    // Check if > 0
+    copy var:intervalEnd to REG_A
+    write 0 to REG_B
+    write OP_CMP_LT to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
+    // Check if intervalStart <= intervalEnd
+    copy var:intervalStart to REG_A
+    copy var:intervalEnd to REG_B
+    write OP_CMP_LE to REG_OP
+    cpu_exec
+    jump_if_not label:invalid_file_header_error
+
+    // Check if intervalStart >= firstUsableBlock
+    copy var:firstUsableBlock to REG_A
+    copy var:intervalStart to REG_B
+    write OP_CMP_LE to REG_OP
+    cpu_exec    
+    jump_if_not label:invalid_file_header_error
+
+    // Check if intervalEnd <= lastUsableBlock
+    copy var:intervalEnd to REG_A
+    copy var:lastUsableBlock to REG_B
+    write OP_CMP_LE to REG_OP
+    cpu_exec
+    jump_if_not label:invalid_file_header_error
+
+    // intervalCount++
+    copy var:intervalCount to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    copy REG_RES to var:intervalCount
+
+    // Add start to block intervals
+    copy var:blockIntervals to REG_A
+    copy var:intervalStart to REG_B
+    write " " to REG_C
+    write OP_CONCAT_WITH to REG_OP
+    cpu_exec
+    copy REG_RES to var:blockIntervals
+
+    // Add end to block intervals
+    copy var:blockIntervals to REG_A
+    copy var:intervalEnd to REG_B
+    write " " to REG_C
+    write OP_CONCAT_WITH to REG_OP
+    cpu_exec
+    copy REG_RES to var:blockIntervals
+
+    // blockIntervalIdx += 1
+    copy var:blockIntervalIdx to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    copy REG_RES to var:blockIntervalIdx
+    jump label:block_pair_loop
+
+label validate_block_ranges
+    // Check if blockIntervals is empty
+    copy var:blockIntervals to REG_A
+    write "" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
+    // If intervalCount is 1 → no need to check for overlaps
+    copy var:intervalCount to REG_A
+    write 1 to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:next_file_header
+
+    write 1 to var:i
+    label outer_loop
+        copy var:blockIntervals to REG_A
+        copy var:i to REG_B
+        write " " to REG_C
+        write OP_GET_COLUMN to REG_OP
+        cpu_exec
+        copy REG_RES to var:start_i
+
+        copy var:i to REG_A
+        write OP_INCR to REG_OP
+        cpu_exec
+        copy var:blockIntervals to REG_A
+        copy REG_RES to REG_B
+        write " " to REG_C
+        write OP_GET_COLUMN to REG_OP
+        cpu_exec
+        copy REG_RES to var:end_i
+
+        copy var:i to REG_A
+        write OP_INCR to REG_OP
+        cpu_exec
+        copy REG_RES to REG_A
+        write OP_INCR to REG_OP
+        cpu_exec
+        copy REG_RES to var:j
+
+        label inner_loop
+            copy var:blockIntervals to REG_A
+            copy var:j to REG_B
+            write " " to REG_C
+            write OP_GET_COLUMN to REG_OP
+            cpu_exec
+            copy REG_RES to var:start_j
+
+            copy var:j to REG_A
+            write OP_INCR to REG_OP
+            cpu_exec
+            copy var:blockIntervals to REG_A
+            copy REG_RES to REG_B
+            write " " to REG_C
+            write OP_GET_COLUMN to REG_OP
+            cpu_exec
+            copy REG_RES to var:end_j
+
+            // Check end_i ≤ start_j
+            copy var:end_i to REG_A
+            copy var:start_j to REG_B
+            write OP_CMP_LE to REG_OP
+            cpu_exec
+            copy REG_BOOL_RES to var:overlapCheck
+
+            // Check end_j ≤ start_i
+            copy var:end_j to REG_A
+            copy var:start_i to REG_B
+            write OP_CMP_LE to REG_OP
+            cpu_exec
+
+            copy var:overlapCheck to REG_A
+            copy REG_BOOL_RES to REG_B
+            write OP_ADD to REG_OP
+            cpu_exec
+            copy REG_RES to var:overlapCheck
+
+            // If intervals overlap — error
+            copy var:overlapCheck to REG_A
+            write 0 to REG_B
+            write OP_CMP_EQ to REG_OP
+            cpu_exec
+            jump_if label:invalid_file_header_error
+
+            // j += 2
+            copy var:j to REG_A
+            write 2 to REG_B
+            write OP_ADD to REG_OP
+            cpu_exec
+            copy REG_RES to var:j
+
+            // if j < intervalCount * 2 → continue inner loop
+            copy var:intervalCount to REG_A
+            write 2 to REG_B // 2?
+            write OP_MUL to REG_OP
+            cpu_exec
+            copy var:j to REG_A
+            copy REG_RES to REG_B
+            write OP_CMP_LT to REG_OP
+            cpu_exec
+            jump_if label:inner_loop
+            jump_if_not label:next_file_header
+
+            // i += 2
+            copy var:i to REG_A
+            write 2 to REG_B
+            write OP_ADD to REG_OP
+            cpu_exec
+            copy REG_RES to var:i
+            
+            jump label:outer_loop
+
+
+label next_file_header
+    // lineIndex++
+    copy var:lineIndex to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    copy REG_RES to var:lineIndex
+
+    copy var:lineIndex to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    
+    copy REG_RES to REG_A
+    copy var:firstUsableBlock to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:check_fs_header_end
+    jump label:file_header_loop
+
+label check_fs_header_end
+    // Read current block
+    copy var:diskName to REG_A
+    copy var:lineIndex to REG_B
+    write OP_READ_BLOCK to REG_OP
+    cpu_exec
+    jump_err label:error
+
+    // Check for FS_HEADER_END
+    copy REG_RES to REG_A
+    write "FS_HEADER_END" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if_not label:no_fs_header_end
+
+write "Partition and file system header are valid." to DISPLAY_BUFFER
+write COLOR_GREEN to DISPLAY_COLOR
+write OP_DISPLAY_LN to REG_OP
+cpu_exec
+jump label:exit
+
+label partition_not_found_error
+    write "Partition not found." to REG_ERROR
+    jump label:error
+
+label missing_fs_header_error
+    write "Missing valid FS_HEADER." to REG_ERROR
+    jump label:error
+
+label invalid_fs_header_error
+    write "Invalid FS_HEADER format or block range." to REG_ERROR
+    jump label:error
+
+label invalid_file_header_error
+    write "Invalid file header detected." to REG_ERROR
+    jump label:error
+
+label invalid_disk_error
+    write "Disk size is invalid or corrupted." to REG_ERROR
+    jump label:error
+
+label no_fs_header_end
+    write "FS_HEADER_END not found." to REG_ERROR
+    jump label:error
+
+label error
+    copy REG_ERROR to DISPLAY_BUFFER
+    write COLOR_RED to DISPLAY_COLOR
+    write OP_DISPLAY_LN to REG_OP
+    cpu_exec
+
+label exit
+    write "Exiting..." to DISPLAY_BUFFER
+    write COLOR_MAGENTA to DISPLAY_COLOR
+    write OP_DISPLAY_LN to REG_OP
+    cpu_exec
+
+    write OP_HALT to REG_OP
+    cpu_exec
