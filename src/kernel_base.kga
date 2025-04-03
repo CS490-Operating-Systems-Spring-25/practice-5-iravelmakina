@@ -65,6 +65,9 @@ cpu_exec
     var catStr
     write "cat" to var:catStr
 
+    var modFileStr
+    write "mod" to var:modFileStr
+
 label kernel_start
     // Display prompt to enter the value:
     copy var:sys_work_dir to DISPLAY_BUFFER
@@ -122,6 +125,13 @@ label kernel_start
     cpu_exec
     jump_if label:cat_command
 
+    // Check mod command e.g. mod path/to/file :
+    copy var:parsedStr to REG_A
+    copy var:modFileStr to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:modfile_command
+
     jump label:kernel_start
 
 label cat_command
@@ -129,14 +139,14 @@ label cat_command
     write "" to REG_B
     write OP_CMP_EQ to REG_OP
     cpu_exec
-    jump_if label:kernel_start
+    jump_if label:empty_arg_err
 
     // let's open file:
     var cat_command_file_desc
     copy var:parsedArg1 to REG_A
     copy PROGRAM_COUNTER to var:sys_return
     jump label:sys_fs_open
-    jump_err label:kernel_start
+    jump_err label:display_error
     copy REG_RES to var:cat_command_file_desc
 
     copy var:cat_command_file_desc to REG_A
@@ -179,6 +189,146 @@ label cat_command
         jump label:sys_fs_close
         jump label:kernel_start
 
+label modfile_command
+    // Check if file name is empty
+    copy var:parsedArg1 to REG_A
+    write "" to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if label:empty_arg_err
+
+    // Let's open file:
+    var modfile_command_file_desc
+    copy var:parsedArg1 to REG_A
+    copy PROGRAM_COUNTER to var:sys_return
+    jump label:sys_fs_open
+    jump_err label:display_error
+    copy REG_RES to var:modfile_command_file_desc
+
+    // Get file descriptor info
+    copy var:modfile_command_file_desc to REG_A
+    copy PROGRAM_COUNTER to var:sys_return
+    jump label:sys_fs_descriptor_info
+    write "File descriptor info(name disk fileHeaderBlock fileSize): " to DISPLAY_BUFFER
+    write COLOR_CYAN to DISPLAY_COLOR
+    write OP_DISPLAY to REG_OP
+    cpu_exec
+    copy REG_RES to DISPLAY_BUFFER
+    write OP_DISPLAY_LN to REG_OP
+    cpu_exec
+
+    copy REG_RES to REG_A
+    write 4 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    var modfile_command_filesize
+    copy REG_RES to var:modfile_command_filesize
+
+    var modfile_command_counter
+    write 1 to var:modfile_command_counter
+label modfile_command_loop
+    copy var:modfile_command_file_desc to REG_A
+    copy var:modfile_command_counter to REG_B
+    copy PROGRAM_COUNTER to var:sys_return
+    jump label:sys_fs_read
+    jump_err label:modfile_command_close
+
+    var modfile_command_line
+    copy REG_RES to var:modfile_command_line
+
+    // Extract first char
+    copy var:modfile_command_line to REG_A
+    write 1 to REG_B
+    write "" to REG_C
+    write OP_GET_COLUMN to REG_OP
+    cpu_exec
+    var firstChar
+    copy REG_RES to var:firstChar
+
+    // Check if it's number
+    copy var:firstChar to REG_A
+    write OP_IS_NUM to REG_OP
+    cpu_exec
+    jump_if_not label:modfile_command_continue
+
+    // Set hasNumberChar to 1
+    var hasNumberChar
+    write 1 to var:hasNumberChar
+
+    // Increment first char
+    copy var:firstChar to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    var incrementedChar
+    copy REG_RES to var:incrementedChar
+
+    // Replace first char with incremented one
+    copy var:modfile_command_line to REG_A
+    write 1 to REG_B
+    write "" to REG_C
+    copy var:incrementedChar to REG_D
+    write OP_REPLACE_COLUMN to REG_OP
+    cpu_exec
+    copy REG_RES to var:modfile_command_line
+
+    // Write the modified line back to the file
+    copy var:modfile_command_file_desc to REG_A
+    copy var:modfile_command_counter to REG_B
+    copy var:modfile_command_line to REG_C
+    copy PROGRAM_COUNTER to var:sys_return
+    jump label:sys_fs_write
+    jump_err label:modfile_command_close
+
+label modfile_command_continue
+    copy var:modfile_command_counter to REG_A
+    write OP_INCR to REG_OP
+    cpu_exec
+    copy REG_RES to var:modfile_command_counter
+
+    copy var:modfile_command_counter to REG_A
+    copy var:modfile_command_filesize to REG_B
+    write OP_CMP_LE to REG_OP
+    cpu_exec
+    jump_if label:modfile_command_loop
+
+label modfile_command_close
+    copy var:modfile_command_file_desc to REG_A
+    copy PROGRAM_COUNTER to var:sys_return
+    jump label:sys_fs_close
+
+    // Check if we have modified the file
+    copy var:hasNumberChar to REG_A
+    write 1 to REG_B
+    write OP_CMP_EQ to REG_OP
+    cpu_exec
+    jump_if_not label:no_modification
+
+    write "File modified successfully!" to DISPLAY_BUFFER
+    write COLOR_GREEN to DISPLAY_COLOR
+    write OP_DISPLAY_LN to REG_OP
+    cpu_exec
+
+    jump label:kernel_start
+
+label no_modification
+    write "File does not have any number chars to modify :(" to DISPLAY_BUFFER
+    write COLOR_MAGENTA to DISPLAY_COLOR
+    write OP_DISPLAY_LN to REG_OP
+    cpu_exec
+
+    jump label:kernel_start
+
+label empty_arg_err
+    write "Empty argument!" to REG_ERROR
+
+label display_error
+    copy REG_ERROR to DISPLAY_BUFFER
+    write COLOR_RED to DISPLAY_COLOR
+    write OP_DISPLAY_LN to REG_OP
+    cpu_exec
+
+    jump label:kernel_start
 
 label kernel_end
     copy REG_ERROR to DISPLAY_BUFFER
