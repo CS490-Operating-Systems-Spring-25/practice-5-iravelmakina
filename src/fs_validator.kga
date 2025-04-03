@@ -162,19 +162,19 @@ label header_search
     jump_err label:error
     copy REG_RES to var:inputStr
 
-    // Check for empty line
+    // Get 1st column
     copy var:inputStr to REG_A
-    write "" to REG_B
-    write OP_CMP_EQ to REG_OP
+    write 1 to REG_B
+    write " " to REG_C
+    write OP_GET_COLUMN to REG_OP
     cpu_exec
-    jump_if label:not_fs_header
 
     // Check for FS_HEADER
-    copy var:inputStr to REG_A
+    copy REG_RES to REG_A
     write "FS_HEADER" to REG_B
-    write OP_STARTS_WITH to REG_OP
+    write OP_CMP_EQ to REG_OP
     cpu_exec
-    jump_if_not label:invalid_fs_header_error
+    jump_if_not label:missing_fs_header_error
 
     // Validate FS_HEADER format
     copy var:inputStr to REG_A
@@ -662,8 +662,8 @@ label partition_not_found_error
     write "Partition not found." to REG_ERROR
     jump label:error
 
-label not_fs_header
-    write "Empty FS_HEADER." to REG_ERROR
+label missing_fs_header_error
+    write "Missing valid FS_HEADER." to REG_ERROR
     jump label:error
 
 label invalid_fs_header_error
