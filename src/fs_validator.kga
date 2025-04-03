@@ -414,6 +414,13 @@ label block_pair_loop
     cpu_exec
     jump_if_not label:invalid_file_header_error
 
+    // Check if > 0
+    copy var:intervalStart to REG_A
+    write 0 to REG_B
+    write OP_CMP_LT to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
+
     // i++
     copy var:blockIntervalIdx to REG_A
     write OP_INCR to REG_OP
@@ -439,6 +446,13 @@ label block_pair_loop
     write OP_IS_NUM to REG_OP
     cpu_exec
     jump_if_not label:invalid_file_header_error
+
+    // Check if > 0
+    copy var:intervalEnd to REG_A
+    write 0 to REG_B
+    write OP_CMP_LT to REG_OP
+    cpu_exec
+    jump_if label:invalid_file_header_error
 
     // Check if intervalStart <= intervalEnd
     copy var:intervalStart to REG_A
